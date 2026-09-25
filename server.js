@@ -121,11 +121,14 @@ function unwrapResult(body, key) {
  */
 async function performLogin(page, baseUrl, customerCode, username, password) {
   const sessionRespPromise = page
-    .waitForResponse((r) => /\/Service(\/JsonService\.svc)?\/Session$/.test(new URL(r.url()).pathname), { timeout: 20000 })
+    .waitForResponse((r) => /\/Service(\/JsonService\.svc)?\/Session$/.test(new URL(r.url()).pathname), { timeout: 40000 })
     .catch(() => null);
 
-  await page.goto(`${baseUrl}/web/login`, { waitUntil: 'networkidle', timeout: 30000 });
-  await page.waitForTimeout(800);
+  // Free-tier instance'ta CPU çok kısıtlı (0.1 core) — 'networkidle' bazı Angular
+  // arka plan pollingleri yüzünden hiç tetiklenmeyebiliyor; 'domcontentloaded' + ek
+  // bekleme daha güvenilir.
+  await page.goto(`${baseUrl}/web/login`, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  await page.waitForTimeout(2500);
 
   await fillByHint(page, ['musteri', 'müşteri', 'customer', 'cari', 'firma', 'cust'], customerCode);
   await fillByHint(page, ['kullanici', 'kullanıcı', 'username', 'user', 'login'], username);
@@ -253,7 +256,7 @@ app.post('/verify-sms', async (req, res) => {
   try {
     const { page } = entry;
     const submitPromise = page
-      .waitForResponse((r) => r.url().includes('SubmitCaptchaText'), { timeout: 15000 })
+      .waitForResponse((r) => r.url().includes('SubmitCaptchaText'), { timeout: 30000 })
       .catch(() => null);
 
     await entry.smsInput.fill(code).catch(() => {});
@@ -315,7 +318,8 @@ app.post('/search', async (req, res) => {
 
     const { page } = entry;
     if (!page.url().includes('/web/')) {
-      await page.goto(`${baseUrl}/web/login`, { waitUntil: 'networkidle', timeout: 20000 }).catch(() => {});
+      await page.goto(`${baseUrl}/web/login`, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+      await page.waitForTimeout(1500);
     }
 
     await dismissModal(page);
@@ -326,7 +330,7 @@ app.post('/search', async (req, res) => {
       return res.json({ error: 'Arama kutusu bulunamadı, oturum sıfırlandı — tekrar deneyin.', products: [] });
     }
 
-    const searchRespPromise = page.waitForResponse((r) => r.url().includes('ProductSearch'), { timeout: 15000 }).catch(() => null);
+    const searchRespPromise = page.waitForResponse((r) => r.url().includes('ProductSearch'), { timeout: 30000 }).catch(() => null);
     await searchInput.click();
     await searchInput.fill('');
     await searchInput.fill(query || '');
@@ -344,7 +348,7 @@ app.post('/search', async (req, res) => {
       return res.json({ products: [] });
     }
 
-    const detailRespPromise = page.waitForResponse((r) => r.url().includes('RemainingProducts'), { timeout: 15000 }).catch(() => null);
+    const detailRespPromise = page.waitForResponse((r) => r.url().includes('RemainingProducts'), { timeout: 30000 }).catch(() => null);
     // Bazı sürümlerde detay isteği aramadan hemen sonra otomatik tetikleniyor; tetiklenmediyse
     // sayfanın kendi mekanizmasını beklemek yerine olumsuz sonuç dönmek daha güvenli.
     const detailResp = await detailRespPromise;
